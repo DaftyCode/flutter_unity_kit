@@ -1,9 +1,6 @@
 name: Publish to pub.dev
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
 
 jobs:
@@ -29,7 +26,7 @@ jobs:
         run: flutter pub get
 
       - name: Analyze
-        run: dart analyze --fatal-infos
+        run: flutter analyze --fatal-infos
 
       - name: Format check
         run: dart format --set-exit-if-changed .
