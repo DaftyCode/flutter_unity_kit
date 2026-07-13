@@ -16,8 +16,8 @@ topics:
 environment:
   # Web support uses modern dart:js_interop (`isA`, package:web), which
   # requires Dart 3.4 / Flutter 3.22. Mobile-only consumers are unaffected.
-  sdk: ">=3.4.0 <4.0.0"
-  flutter: ">=3.22.0"
+  sdk: ">=3.12.0 <4.0.0"
+  flutter: ">=3.44.0"
 
 dependencies:
   flutter:

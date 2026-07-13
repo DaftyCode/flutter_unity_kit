@@ -1,12 +1,14 @@
+import com.android.build.api.dsl.LibraryExtension
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.library")
-    id("org.jetbrains.kotlin.android")
 }
 
 group = "com.unity_kit"
 version = "0.9.1"
 
-android {
+extensions.configure<LibraryExtension> {
     namespace = "com.unity_kit"
     compileSdk = 35
 
@@ -20,13 +22,15 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_17
     }
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlin:kotlin-stdlib")
     implementation("androidx.lifecycle:lifecycle-common:2.8.7")
     implementation("androidx.lifecycle:lifecycle-process:2.8.7")
     implementation("androidx.annotation:annotation:1.9.1")
