@@ -1,3 +1,7 @@
+// The public constructor keeps descriptive parameter names while implementation
+// fields remain private.
+// ignore_for_file: prefer_initializing_formals
+
 import 'dart:async';
 
 import '../exceptions/exceptions.dart';
@@ -113,9 +117,9 @@ class UnityBridgeImpl implements UnityBridge {
     required UnityKitPlatform platform,
     MessageBatcher? batcher,
     MessageThrottler? throttler,
-  })  : _platform = platform,
-        _batcher = batcher,
-        _throttler = throttler;
+  }) : _platform = platform,
+       _batcher = batcher,
+       _throttler = throttler;
 
   final UnityKitPlatform _platform;
   final MessageBatcher? _batcher;
@@ -175,8 +179,10 @@ class UnityBridgeImpl implements UnityBridge {
 
     await _platform.initialize();
 
-    UnityKitLogger.instance.debug('Platform initialize() called, '
-        'waiting for onUnityCreated event');
+    UnityKitLogger.instance.debug(
+      'Platform initialize() called, '
+      'waiting for onUnityCreated event',
+    );
   }
 
   @override

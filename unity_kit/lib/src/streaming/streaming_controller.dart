@@ -1,3 +1,7 @@
+// The public constructor keeps a descriptive `bridge` parameter while the
+// implementation field remains private.
+// ignore_for_file: prefer_initializing_formals
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -57,11 +61,11 @@ class StreamingController {
     UnityAssetLoader? assetLoader,
     http.Client? httpClient,
     CacheManager? cacheManager,
-  })  : _bridge = bridge,
-        _manifestUrl = _validateUrl(manifestUrl),
-        _assetLoader = assetLoader ?? const UnityAddressablesLoader(),
-        _httpClient = httpClient ?? http.Client(),
-        _cacheManager = cacheManager ?? CacheManager();
+  }) : _bridge = bridge,
+       _manifestUrl = _validateUrl(manifestUrl),
+       _assetLoader = assetLoader ?? const UnityAddressablesLoader(),
+       _httpClient = httpClient ?? http.Client(),
+       _cacheManager = cacheManager ?? CacheManager();
 
   static String _validateUrl(String url) {
     final uri = Uri.parse(url);
@@ -277,10 +281,7 @@ class StreamingController {
   ///
   /// [loadMode] controls the Unity load mode: `'Single'` replaces the
   /// current scene, `'Additive'` loads alongside it.
-  Future<void> loadScene(
-    String sceneName, {
-    String loadMode = 'Single',
-  }) async {
+  Future<void> loadScene(String sceneName, {String loadMode = 'Single'}) async {
     _assertReady();
 
     final bundle = _manifest!.getBundleByName(sceneName);
@@ -420,12 +421,14 @@ class StreamingController {
         bytesBuilder.add(chunk);
         downloaded += chunk.length;
 
-        _progressController.add(DownloadProgress(
-          bundleName: bundle.name,
-          downloadedBytes: downloaded,
-          totalBytes: bundle.sizeBytes,
-          state: DownloadState.downloading,
-        ));
+        _progressController.add(
+          DownloadProgress(
+            bundleName: bundle.name,
+            downloadedBytes: downloaded,
+            totalBytes: bundle.sizeBytes,
+            state: DownloadState.downloading,
+          ),
+        );
       }
 
       if (_isDisposed) return;
@@ -470,17 +473,11 @@ class StreamingController {
   }
 
   /// Emits a structured error to the [errors] stream.
-  void _emitError(
-    StreamingErrorType type,
-    String message, [
-    Object? cause,
-  ]) {
+  void _emitError(StreamingErrorType type, String message, [Object? cause]) {
     if (!_errorController.isClosed) {
-      _errorController.add(StreamingError(
-        type: type,
-        message: message,
-        cause: cause,
-      ));
+      _errorController.add(
+        StreamingError(type: type, message: message, cause: cause),
+      );
     }
   }
 

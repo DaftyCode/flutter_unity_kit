@@ -51,7 +51,7 @@ void main() {
   Widget buildApp(UnityBridge bridge) {
     return WidgetsApp(
       color: const Color(0x00000000),
-      builder: (_, __) => _TestWidget(bridge: bridge),
+      builder: (_, _) => _TestWidget(bridge: bridge),
     );
   }
 
@@ -74,7 +74,7 @@ void main() {
       await tester.pumpWidget(
         WidgetsApp(
           color: const Color(0x00000000),
-          builder: (_, __) => const SizedBox.shrink(),
+          builder: (_, _) => const SizedBox.shrink(),
         ),
       );
 
@@ -105,8 +105,9 @@ void main() {
       verifyNever(() => mockBridge.pause());
     });
 
-    testWidgets('other lifecycle states do not call pause or resume',
-        (tester) async {
+    testWidgets('other lifecycle states do not call pause or resume', (
+      tester,
+    ) async {
       await tester.pumpWidget(buildApp(mockBridge));
 
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);

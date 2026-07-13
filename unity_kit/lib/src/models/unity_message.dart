@@ -21,10 +21,7 @@ class UnityMessage {
 
   /// Creates a command message to send to Unity.
   factory UnityMessage.command(String action, [Map<String, dynamic>? data]) {
-    return UnityMessage(
-      type: action,
-      data: data,
-    );
+    return UnityMessage(type: action, data: data);
   }
 
   /// Creates a message targeting a specific Unity GameObject and method.
@@ -93,10 +90,7 @@ class UnityMessage {
       data = null;
     }
 
-    return UnityMessage(
-      type: type,
-      data: data,
-    );
+    return UnityMessage(type: type, data: data);
   }
 
   /// Message type identifier (e.g., 'LoadScene', 'scene_loaded').
@@ -125,10 +119,7 @@ class UnityMessage {
 
   /// Serializes this message to a JSON string for sending to Unity.
   String toJson() {
-    return json.encode({
-      'type': type,
-      if (data != null) 'data': data,
-    });
+    return json.encode({'type': type, if (data != null) 'data': data});
   }
 
   @override
@@ -155,17 +146,16 @@ class _RoutedUnityMessage extends UnityMessage {
   _RoutedUnityMessage({
     required this.target,
     required this.routedMethod,
-    required Map<String, dynamic>? routedData,
-  })  : _routedData = routedData,
-        super(
-          type: 'routed',
-          gameObject: 'FlutterBridge',
-          method: 'ReceiveMessage',
-        );
+    required this.routedData,
+  }) : super(
+         type: 'routed',
+         gameObject: 'FlutterBridge',
+         method: 'ReceiveMessage',
+       );
 
   final String target;
   final String routedMethod;
-  final Map<String, dynamic>? _routedData;
+  final Map<String, dynamic>? routedData;
 
   @override
   String get gameObject => target;
@@ -177,7 +167,7 @@ class _RoutedUnityMessage extends UnityMessage {
   String get type => routedMethod;
 
   @override
-  Map<String, dynamic>? get data => _routedData;
+  Map<String, dynamic>? get data => routedData;
 
   @override
   String get nativeGameObject => 'FlutterBridge';
@@ -190,7 +180,7 @@ class _RoutedUnityMessage extends UnityMessage {
     return json.encode({
       'target': target,
       'method': routedMethod,
-      'data': _routedData != null ? json.encode(_routedData) : '',
+      'data': routedData != null ? json.encode(routedData) : '',
     });
   }
 }
