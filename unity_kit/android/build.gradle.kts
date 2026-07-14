@@ -10,7 +10,7 @@ version = "0.9.1"
 
 extensions.configure<LibraryExtension> {
     namespace = "com.unity_kit"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 21
