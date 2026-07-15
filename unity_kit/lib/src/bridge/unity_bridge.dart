@@ -518,6 +518,8 @@ class UnityBridgeImpl implements UnityBridge {
     final message = data is Map
         ? (data['message'] as String? ?? 'Unknown error')
         : 'Unknown error';
+    _guard.reset();
+    _lifecycle.reportError(message);
     UnityKitLogger.instance.error('Unity error: $message');
   }
 

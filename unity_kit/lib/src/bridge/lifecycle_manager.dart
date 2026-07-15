@@ -69,6 +69,15 @@ class LifecycleManager {
     _state = UnityLifecycleState.uninitialized;
   }
 
+  /// Emit a player error without inventing a lifecycle transition.
+  ///
+  /// Native initialization can fail while the lifecycle remains in
+  /// [UnityLifecycleState.initializing]. Consumers still need the failure on
+  /// [eventStream] so they can replace loading UI with a useful error state.
+  void reportError(String message) {
+    _eventController.add(UnityEvent.error(message));
+  }
+
   /// Dispose all resources.
   ///
   /// Closes [stateStream] and [eventStream]. After calling this,

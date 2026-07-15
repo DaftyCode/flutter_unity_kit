@@ -6,6 +6,13 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import java.lang.reflect.Constructor
+import java.lang.reflect.InvocationTargetException
+
+class UnityPlayerCreationException(
+    message: String,
+    cause: Throwable? = null,
+) : RuntimeException(message, cause)
 
 /// Singleton manager for the Unity player instance.
 ///
@@ -93,8 +100,9 @@ object UnityPlayerManager {
             player = tryCreateUnity6Player(activity) ?: tryCreateLegacyPlayer(activity)
 
             if (player == null) {
-                Log.e(TAG, "Failed to create Unity player: no Unity classes found on classpath")
-                return
+                throw UnityPlayerCreationException(
+                    "No compatible Unity player class or public constructor was found on the classpath",
+                )
             }
 
             isLoaded = true
@@ -104,8 +112,16 @@ object UnityPlayerManager {
             focus()
             notifyCreated()
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed to create Unity player", e)
             player = null
+            isLoaded = false
+            isPaused = false
+            val failure = if (e is UnityPlayerCreationException) {
+                e
+            } else {
+                UnityPlayerCreationException("Failed to create Unity player", e)
+            }
+            Log.e(TAG, failure.message, failure)
+            throw failure
         } finally {
             isCreating = false
         }
@@ -113,42 +129,40 @@ object UnityPlayerManager {
 
     /// Attempts to create a Unity 6+ player via reflection.
     ///
-    /// Tries multiple constructor signatures for Unity 6 compatibility:
-    /// 1. Context + IUnityPlayerLifecycleEvents
-    /// 2. Context only
-    /// 3. Activity
+    /// Selects one supported constructor before invoking it. Constructor
+    /// invocation failures are not treated as signature mismatches: retrying a
+    /// second constructor can partially initialize Unity twice and hides the
+    /// actual problem (for example, unextracted native libraries).
     private fun tryCreateUnity6Player(activity: Activity): Any? {
-        return try {
-            val clazz = Class.forName(UNITY_6_CLASS)
-            // Try Context + IUnityPlayerLifecycleEvents
-            try {
-                val lifecycleClass = Class.forName("com.unity3d.player.IUnityPlayerLifecycleEvents")
-                val constructor = clazz.getConstructor(Context::class.java, lifecycleClass)
-                val instance = constructor.newInstance(activity, null)
-                Log.d(TAG, "Created Unity 6 player (Context + IUnityPlayerLifecycleEvents)")
-                instance
-            } catch (_: Throwable) {
-                // Try Context only
-                try {
-                    val constructor = clazz.getConstructor(Context::class.java)
-                    val instance = constructor.newInstance(activity)
-                    Log.d(TAG, "Created Unity 6 player (Context)")
-                    instance
-                } catch (_: Throwable) {
-                    // Try Activity
-                    val constructor = clazz.getConstructor(Activity::class.java)
-                    val instance = constructor.newInstance(activity)
-                    Log.d(TAG, "Created Unity 6 player (Activity)")
-                    instance
-                }
-            }
+        val clazz = try {
+            Class.forName(UNITY_6_CLASS)
         } catch (e: ClassNotFoundException) {
             Log.d(TAG, "Unity 6 class not found, trying legacy player")
-            null
-        } catch (e: Throwable) {
-            Log.w(TAG, "Failed to create Unity 6 player", e)
-            null
+            return null
         }
+
+        findPublicConstructor(clazz, Context::class.java)?.let { constructor ->
+            return invokeConstructor(constructor, "Unity 6 (Context)", activity)
+        }
+
+        val lifecycleClass = findLifecycleClass()
+        if (lifecycleClass != null) {
+            findPublicConstructor(clazz, Context::class.java, lifecycleClass)?.let { constructor ->
+                return invokeConstructor(
+                    constructor,
+                    "Unity 6 (Context + IUnityPlayerLifecycleEvents)",
+                    activity,
+                    null,
+                )
+            }
+        }
+
+        findPublicConstructor(clazz, Activity::class.java)?.let { constructor ->
+            return invokeConstructor(constructor, "Unity 6 (Activity)", activity)
+        }
+
+        Log.w(TAG, "Unity 6 class found but no compatible public constructor is available")
+        return null
     }
 
     /// Attempts to create a legacy UnityPlayer via reflection.
@@ -158,29 +172,68 @@ object UnityPlayerManager {
     /// 1. Activity + IUnityPlayerLifecycleEvents (Unity 2022.3+)
     /// 2. Activity only (older Unity versions)
     private fun tryCreateLegacyPlayer(activity: Activity): Any? {
-        return try {
-            val clazz = Class.forName(UNITY_LEGACY_CLASS)
-
-            // Try Activity + IUnityPlayerLifecycleEvents first (Unity 2022.3+)
-            try {
-                val lifecycleClass = Class.forName("com.unity3d.player.IUnityPlayerLifecycleEvents")
-                val constructor = clazz.getConstructor(Activity::class.java, lifecycleClass)
-                val instance = constructor.newInstance(activity, null)
-                Log.d(TAG, "Created legacy Unity player (Activity + IUnityPlayerLifecycleEvents)")
-                instance
-            } catch (_: Throwable) {
-                // Fallback: Activity only
-                val constructor = clazz.getConstructor(Activity::class.java)
-                val instance = constructor.newInstance(activity)
-                Log.d(TAG, "Created legacy Unity player (Activity)")
-                instance
-            }
+        val clazz = try {
+            Class.forName(UNITY_LEGACY_CLASS)
         } catch (e: ClassNotFoundException) {
-            Log.d(TAG, "Legacy UnityPlayer class not found, trying Unity 6 player")
-            null
+            Log.d(TAG, "Legacy UnityPlayer class not found")
+            return null
+        }
+
+        val lifecycleClass = findLifecycleClass()
+        if (lifecycleClass != null) {
+            findPublicConstructor(clazz, Activity::class.java, lifecycleClass)?.let { constructor ->
+                return invokeConstructor(
+                    constructor,
+                    "legacy Unity (Activity + IUnityPlayerLifecycleEvents)",
+                    activity,
+                    null,
+                )
+            }
+        }
+
+        findPublicConstructor(clazz, Activity::class.java)?.let { constructor ->
+            return invokeConstructor(constructor, "legacy Unity (Activity)", activity)
+        }
+
+        Log.w(TAG, "Legacy UnityPlayer class found but no compatible public constructor is available")
+        return null
+    }
+
+    private fun findLifecycleClass(): Class<*>? = try {
+        Class.forName("com.unity3d.player.IUnityPlayerLifecycleEvents")
+    } catch (_: ClassNotFoundException) {
+        null
+    }
+
+    private fun findPublicConstructor(
+        clazz: Class<*>,
+        vararg parameterTypes: Class<*>,
+    ): Constructor<*>? = try {
+        clazz.getConstructor(*parameterTypes)
+    } catch (_: NoSuchMethodException) {
+        null
+    }
+
+    private fun invokeConstructor(
+        constructor: Constructor<*>,
+        description: String,
+        vararg arguments: Any?,
+    ): Any {
+        try {
+            return constructor.newInstance(*arguments).also {
+                Log.d(TAG, "Created $description player")
+            }
+        } catch (e: InvocationTargetException) {
+            val rootCause = e.targetException ?: e
+            throw UnityPlayerCreationException(
+                "$description constructor failed: ${rootCause.message ?: rootCause.javaClass.simpleName}",
+                rootCause,
+            )
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed to create legacy Unity player", e)
-            null
+            throw UnityPlayerCreationException(
+                "$description constructor failed: ${e.message ?: e.javaClass.simpleName}",
+                e,
+            )
         }
     }
 

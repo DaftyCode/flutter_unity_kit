@@ -108,11 +108,13 @@ class UnityKitViewController(
                 Log.i(TAG, "Auto-init: Unity player created successfully")
                 applyTargetFrameRate()
                 applyInitConfig()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.e(TAG, "Auto-init: failed to create Unity player", e)
+                notifyUnityError("CREATE_FAILED", e)
             }
         }
 
+        if (!UnityPlayerManager.isReady) return
         attachUnityView()
     }
 
@@ -224,8 +226,10 @@ class UnityKitViewController(
             UnityPlayerManager.createPlayer(currentActivity)
             attachUnityView()
             result.success(null)
-        } catch (e: Exception) {
-            result.error("CREATE_FAILED", "Failed to create Unity player: ${e.message}", null)
+        } catch (e: Throwable) {
+            val message = rootErrorMessage(e)
+            notifyUnityError("CREATE_FAILED", e)
+            result.error("CREATE_FAILED", message, null)
         }
     }
 
@@ -296,8 +300,10 @@ class UnityKitViewController(
             }
             attachUnityView()
             result.success(null)
-        } catch (e: Exception) {
-            result.error("INIT_FAILED", "Failed to initialize Unity player: ${e.message}", null)
+        } catch (e: Throwable) {
+            val message = rootErrorMessage(e)
+            notifyUnityError("INIT_FAILED", e)
+            result.error("INIT_FAILED", message, null)
         }
     }
 
@@ -515,5 +521,24 @@ class UnityKitViewController(
                 }
             }
         }
+    }
+
+    private fun notifyUnityError(code: String, error: Throwable) {
+        invokeOnMainThread(
+            "onError",
+            mapOf(
+                "code" to code,
+                "message" to rootErrorMessage(error),
+            ),
+        )
+    }
+
+    private fun rootErrorMessage(error: Throwable): String {
+        var root = error
+        val visited = mutableSetOf<Throwable>()
+        while (root.cause != null && visited.add(root)) {
+            root = root.cause!!
+        }
+        return root.message ?: root.javaClass.simpleName
     }
 }
