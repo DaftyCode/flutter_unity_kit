@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -60,13 +61,29 @@ namespace UnityKit.Editor
                 if (!string.IsNullOrEmpty(envPath))
                     return Path.GetFullPath(envPath);
 
-                return EditorPrefs.GetString(FLUTTER_PROJECT_PREF, "");
+                var configuredPath = EditorPrefs.GetString(FLUTTER_PROJECT_PREF, "");
+                if (!string.IsNullOrEmpty(configuredPath))
+                    return Path.GetFullPath(configuredPath);
+
+                // A Unity project commonly lives inside <flutter>/unity/<project>.
+                // Discover that layout so a normal Export also deploys without
+                // requiring machine-specific EditorPrefs configuration.
+                var current = new DirectoryInfo(ProjectPath);
+                while (current != null)
+                {
+                    if (File.Exists(Path.Combine(current.FullName, "pubspec.yaml")))
+                        return current.FullName;
+                    current = current.Parent;
+                }
+
+                return "";
             }
             set => EditorPrefs.SetString(FLUTTER_PROJECT_PREF, value);
         }
 
         private static bool HasFlutterProject =>
-            !string.IsNullOrEmpty(FlutterProjectPath) && Directory.Exists(FlutterProjectPath);
+            !string.IsNullOrEmpty(FlutterProjectPath)
+            && File.Exists(Path.Combine(FlutterProjectPath, "pubspec.yaml"));
 
         // ──────────────────────────────────────────────
         // Menu items — Export (standalone)
@@ -329,7 +346,8 @@ namespace UnityKit.Editor
 
             // IL2CPP compiler configuration
 #if UNITY_2022_1_OR_NEWER
-            PlayerSettings.SetIl2CppCompilerConfiguration(BuildTargetGroup.Android,
+            PlayerSettings.SetIl2CppCompilerConfiguration(
+                UnityEditor.Build.NamedBuildTarget.Android,
                 isReleaseBuild ? Il2CppCompilerConfiguration.Release : Il2CppCompilerConfiguration.Debug);
 #endif
 
@@ -392,6 +410,9 @@ namespace UnityKit.Editor
         {
             // --- build.gradle ---
             var buildFile = Path.Combine(artifactPath, "build.gradle");
+            if (!File.Exists(buildFile))
+                throw new FileNotFoundException("Unity Android Gradle module was not exported", buildFile);
+
             var buildText = File.ReadAllText(buildFile);
 
             // Convert from application to library
@@ -401,34 +422,45 @@ namespace UnityKit.Editor
             buildText = buildText.Replace("enableSplit = true", "enable true");
             buildText = buildText.Replace(
                 "implementation fileTree(dir: 'libs', include: ['*.jar'])",
-                "implementation(name: 'unity-classes', ext:'jar')");
+                "implementation(name: 'unity-classes', ext: 'jar')");
             buildText = buildText.Replace(" + unityStreamingAssets.tokenize(', ')", "");
 
             // Disable Unity NDK path (conflicts with Flutter)
-            buildText = buildText.Replace("ndkPath \"", "// ndkPath \"");
+            buildText = Regex.Replace(
+                buildText,
+                @"(?m)^(\s*)ndkPath\s+",
+                "$1// ndkPath ");
 
             // Unity 6: fix shared/ path
             buildText = Regex.Replace(buildText, @"\.\./shared/", "./shared/");
 
             // Add namespace for Android Gradle Plugin 8+
-            if (!buildText.Contains("namespace"))
+            if (!Regex.IsMatch(buildText, @"(?m)^\s*namespace\s+"))
             {
-                buildText = buildText.Replace("compileOptions {",
-                    "if (project.android.hasProperty(\"namespace\")) {\n        namespace 'com.unity3d.player'\n    }\n\n    compileOptions {");
+                buildText = buildText.Replace(
+                    "android {",
+                    "android {\n    namespace 'com.unity3d.player'");
             }
 
             // Remove applicationId
-            buildText = Regex.Replace(buildText, @"\n.*applicationId '.+'.*\n", "\n");
+            buildText = Regex.Replace(
+                buildText,
+                "(?m)^\\s*applicationId\\s*(?:=\\s*)?['\\\"].+['\\\"]\\s*$\\r?\\n?",
+                string.Empty);
             File.WriteAllText(buildFile, buildText);
 
             // --- AndroidManifest.xml ---
             var manifestFile = Path.Combine(artifactPath, "src/main/AndroidManifest.xml");
-            var manifestText = File.ReadAllText(manifestFile);
+            if (!File.Exists(manifestFile))
+                throw new FileNotFoundException("Unity Android manifest was not exported", manifestFile);
 
             // Strip application attributes and activity block
-            manifestText = Regex.Replace(manifestText, @"<application .*>", "<application>");
-            manifestText = new Regex(@"<activity.*>(\s|\S)+?</activity>", RegexOptions.Multiline)
-                .Replace(manifestText, "");
+            var manifestText = File.ReadAllText(manifestFile);
+            manifestText = Regex.Replace(manifestText, @"<application\b[^>]*>", "<application>");
+            manifestText = Regex.Replace(
+                manifestText,
+                @"<activity\b[^>]*>[\s\S]*?</activity>",
+                string.Empty);
             File.WriteAllText(manifestFile, manifestText);
 
             // --- proguard-unity.txt ---
@@ -436,11 +468,91 @@ namespace UnityKit.Editor
             if (File.Exists(proguardFile))
             {
                 var proguardText = File.ReadAllText(proguardFile);
-                proguardText = proguardText.Replace("-ignorewarnings",
-                    "-keep class com.unity_kit.** { *; }\n-keep class com.unity3d.player.** { *; }\n-ignorewarnings");
-                File.WriteAllText(proguardFile, proguardText);
+                const string rules =
+                    "-keep class com.unity_kit.** { *; }\n" +
+                    "-keep class com.unity3d.player.** { *; }\n";
+                if (!proguardText.Contains("com.unity_kit.**"))
+                    File.WriteAllText(proguardFile, rules + proguardText);
             }
 
+            NormalizeXrManifestModule(artifactPath);
+            PatchBundledAarNamespaces(artifactPath);
+        }
+
+        /// <summary>
+        /// Unity 6 can export xrmanifest as a nested Android library without a
+        /// namespace. AGP 8+ rejects that module while consuming unityLibrary.
+        /// </summary>
+        private static void NormalizeXrManifestModule(string artifactPath)
+        {
+            var buildFile = Path.Combine(
+                artifactPath, "xrmanifest.androidlib", "build.gradle");
+            if (!File.Exists(buildFile))
+                return;
+
+            var contents = File.ReadAllText(buildFile);
+            if (Regex.IsMatch(contents, @"(?m)^\s*namespace\s+"))
+                return;
+
+            contents = contents.Replace(
+                "android {",
+                "android {\n    namespace 'com.unity3d.player.xrmanifest'");
+            File.WriteAllText(buildFile, contents);
+        }
+
+        /// <summary>
+        /// Unity's permissions AAR can ship with a legacy manifest package.
+        /// Giving it a stable unique package lets modern AGP derive a namespace.
+        /// </summary>
+        private static void PatchBundledAarNamespaces(string artifactPath)
+        {
+            PatchAarManifestPackage(
+                Path.Combine(artifactPath, "libs", "unityandroidpermissions.aar"),
+                "com.unity3d.permissions");
+        }
+
+        private static void PatchAarManifestPackage(string aarPath, string packageName)
+        {
+            if (!File.Exists(aarPath))
+                return;
+
+            var temporaryPath = aarPath + ".tmp";
+            if (File.Exists(temporaryPath))
+                File.Delete(temporaryPath);
+
+            using (var input = ZipFile.OpenRead(aarPath))
+            using (var output = ZipFile.Open(temporaryPath, ZipArchiveMode.Create))
+            {
+                foreach (var sourceEntry in input.Entries)
+                {
+                    var destinationEntry = output.CreateEntry(
+                        sourceEntry.FullName,
+                        System.IO.Compression.CompressionLevel.Optimal);
+
+                    using var sourceStream = sourceEntry.Open();
+                    using var destinationStream = destinationEntry.Open();
+                    if (sourceEntry.FullName == "AndroidManifest.xml")
+                    {
+                        using var reader = new StreamReader(sourceStream);
+                        var manifest = reader.ReadToEnd();
+                        manifest = Regex.Replace(
+                            manifest,
+                            @"\bpackage=""[^""]+""",
+                            $"package=\"{packageName}\"",
+                            RegexOptions.None,
+                            TimeSpan.FromSeconds(1));
+                        using var writer = new StreamWriter(destinationStream);
+                        writer.Write(manifest);
+                    }
+                    else
+                    {
+                        sourceStream.CopyTo(destinationStream);
+                    }
+                }
+            }
+
+            File.Delete(aarPath);
+            File.Move(temporaryPath, aarPath);
         }
 
         /// <summary>
@@ -509,8 +621,10 @@ namespace UnityKit.Editor
                     {
                         appBuildScript += "\ndependencies {\n    implementation project(':unityLibrary')\n}\n";
                     }
-                    File.WriteAllText(appBuildPath, appBuildScript);
                 }
+                appBuildScript = EnsureLegacyNativeLibraryPackaging(
+                    appBuildScript, isKotlinDsl: false);
+                File.WriteAllText(appBuildPath, appBuildScript);
             }
         }
 
@@ -555,9 +669,47 @@ namespace UnityKit.Editor
                     {
                         appBuildScript += "\ndependencies {\n    implementation(project(\":unityLibrary\"))\n}\n";
                     }
-                    File.WriteAllText(appBuildPath, appBuildScript);
                 }
+                appBuildScript = EnsureLegacyNativeLibraryPackaging(
+                    appBuildScript, isKotlinDsl: true);
+                File.WriteAllText(appBuildPath, appBuildScript);
             }
+        }
+
+        /// <summary>
+        /// UnityPlayer loads libmain.so/libunity.so from nativeLibraryDir.
+        /// Flutter's default modern APK packaging can keep those libraries in
+        /// the APK, so force extraction in every generated host project.
+        /// </summary>
+        private static string EnsureLegacyNativeLibraryPackaging(
+            string appBuildScript,
+            bool isKotlinDsl)
+        {
+            if (appBuildScript.Contains("useLegacyPackaging"))
+                return appBuildScript;
+
+            var androidBlock = new Regex(@"android\s*\{");
+            if (!androidBlock.IsMatch(appBuildScript))
+                throw new InvalidDataException(
+                    "Flutter app Gradle file has no android block; " +
+                    "cannot configure Unity native library packaging.");
+
+            var packagingBlock = isKotlinDsl
+                ? "\n    packaging {\n" +
+                  "        jniLibs {\n" +
+                  "            useLegacyPackaging = true\n" +
+                  "        }\n" +
+                  "    }\n"
+                : "\n    packaging {\n" +
+                  "        jniLibs {\n" +
+                  "            useLegacyPackaging = true\n" +
+                  "        }\n" +
+                  "    }\n";
+
+            return androidBlock.Replace(
+                appBuildScript,
+                match => match.Value + packagingBlock,
+                1);
         }
 
         // ──────────────────────────────────────────────
@@ -601,7 +753,8 @@ namespace UnityKit.Editor
 
             // IL2CPP compiler configuration
 #if UNITY_2022_1_OR_NEWER
-            PlayerSettings.SetIl2CppCompilerConfiguration(BuildTargetGroup.iOS,
+            PlayerSettings.SetIl2CppCompilerConfiguration(
+                UnityEditor.Build.NamedBuildTarget.iOS,
                 isReleaseBuild ? Il2CppCompilerConfiguration.Release : Il2CppCompilerConfiguration.Debug);
 #endif
 

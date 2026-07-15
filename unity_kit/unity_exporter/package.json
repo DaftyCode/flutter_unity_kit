@@ -1,0 +1,16 @@
+{
+  "name": "com.codigee.unity-kit.exporter",
+  "version": "2.0.2",
+  "displayName": "Unity Kit Exporter",
+  "description": "Exports Unity as a library and deploys it into Flutter projects on Android, iOS, and WebGL.",
+  "unity": "2022.3",
+  "keywords": [
+    "flutter",
+    "unity-as-a-library",
+    "exporter"
+  ],
+  "author": {
+    "name": "Unity Kit contributors",
+    "url": "https://github.com/erykkruk/flutter_unity_kit"
+  }
+}

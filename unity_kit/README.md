@@ -165,10 +165,14 @@ Export the Unity project as an iOS framework and include it in your Runner works
 
 1. Open your Unity project (2022.3 LTS or later).
 2. Copy the C# scripts from `unity/Assets/Scripts/UnityKit/` into your Unity `Assets/` folder.
-3. Create an empty `GameObject` named `FlutterBridge` in your initial scene.
-4. Attach the `FlutterBridge` component and (optionally) `SceneTracker` and `MessageBatcher`.
-5. Mark the GameObject as `DontDestroyOnLoad` (this is automatic via the `FlutterBridge` script).
-6. Build for the target platform and export.
+3. Install the reusable exporter with Unity Package Manager, using the repository
+   URL with `?path=/unity_kit/unity_exporter` (append `#branch-or-tag` when needed).
+4. Create an empty `GameObject` named `FlutterBridge` in your initial scene.
+5. Attach the `FlutterBridge` component and (optionally) `SceneTracker` and `MessageBatcher`.
+6. Mark the GameObject as `DontDestroyOnLoad` (this is automatic via the `FlutterBridge` script).
+7. Export from the **Flutter** menu. The exporter discovers a containing Flutter
+   project automatically, or accepts a path through **Flutter > Settings** or
+   `UNITY_KIT_FLUTTER_PROJECT`.
 
 ---
 
