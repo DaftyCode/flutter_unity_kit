@@ -515,9 +515,12 @@ class UnityBridgeImpl implements UnityBridge {
   /// Called when an error event is received from the platform.
   void _onError(Map<String, dynamic> event) {
     final data = event['data'];
-    final message = data is Map
-        ? (data['message'] as String? ?? 'Unknown error')
-        : 'Unknown error';
+    final message = switch ((event['message'], data)) {
+      (final String message, _) when message.isNotEmpty => message,
+      (_, final Map data) => data['message'] as String? ?? 'Unknown error',
+      (_, final String message) when message.isNotEmpty => message,
+      _ => 'Unknown error',
+    };
     _guard.reset();
     _lifecycle.reportError(message);
     UnityKitLogger.instance.error('Unity error: $message');
