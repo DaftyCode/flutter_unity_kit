@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using UnityEditor;
 using UnityEngine;
 using Application = UnityEngine.Application;
@@ -365,12 +366,13 @@ namespace UnityKit.Editor
             // Post-process: convert to library module
             ModifyAndroidGradle(AndroidArtifactPath);
 
-            // Copy launcher resources
-            Copy(
+            // Merge launcher resources without replacing complete values XML
+            // files owned by unityLibrary (for example strings.xml).
+            MergeAndroidResources(
                 Path.Combine(APKPath, "launcher/src/main/res"),
-                Path.Combine(AndroidArtifactPath, "src/main/res"),
-                false
+                Path.Combine(AndroidArtifactPath, "src/main/res")
             );
+            MergeUnityLibraryTemplateResources(AndroidArtifactPath);
 
             var mode = isReleaseBuild ? "Release" : "Debug";
             Debug.Log($"-- Android {mode} Build: SUCCESSFUL --");
@@ -439,18 +441,6 @@ namespace UnityKit.Editor
                 File.WriteAllText(proguardFile, proguardText);
             }
 
-            // --- strings.xml ---
-            var stringsFile = Path.Combine(APKPath, "launcher", "src", "main", "res", "values", "strings.xml");
-            if (File.Exists(stringsFile))
-            {
-                var stringsText = File.ReadAllText(stringsFile);
-                if (!stringsText.Contains("game_view_content_description"))
-                {
-                    stringsText = stringsText.Replace("<resources>",
-                        "<resources>\n  <string name=\"game_view_content_description\">Game view</string>");
-                    File.WriteAllText(stringsFile, stringsText);
-                }
-            }
         }
 
         /// <summary>
@@ -768,6 +758,147 @@ body { padding: 0; margin: 0; overflow: hidden; }
         // ──────────────────────────────────────────────
         // Utilities
         // ──────────────────────────────────────────────
+
+        /// <summary>
+        /// Merges the resources assigned to unityLibrary by the active Unity
+        /// Editor. Some Unity exports omit module-specific template values;
+        /// reading the installed version avoids hard-coded resource names.
+        /// </summary>
+        private static void MergeUnityLibraryTemplateResources(string artifactPath)
+        {
+            var templateRoot = Path.Combine(
+                EditorApplication.applicationContentsPath,
+                "PlaybackEngines", "AndroidPlayer", "Apk", "res");
+            if (!Directory.Exists(templateRoot))
+                throw new DirectoryNotFoundException(
+                    $"Unity Android resource templates not found at {templateRoot}");
+
+            var moduleDirectories = Directory.GetDirectories(
+                templateRoot, "unityLibrary", SearchOption.AllDirectories);
+            if (moduleDirectories.Length == 0)
+                throw new InvalidOperationException(
+                    $"No unityLibrary resource templates found under {templateRoot}");
+
+            var destinationRoot = Path.Combine(artifactPath, "src", "main", "res");
+            foreach (var moduleDirectory in moduleDirectories)
+            {
+                var qualifierDirectory = Directory.GetParent(moduleDirectory)
+                    ?? throw new InvalidOperationException(
+                        $"Invalid Unity resource template path: {moduleDirectory}");
+                var destination = Path.Combine(
+                    destinationRoot,
+                    Path.GetRelativePath(templateRoot, qualifierDirectory.FullName));
+                MergeAndroidResources(moduleDirectory, destination);
+                ValidateMergedValuesResources(moduleDirectory, destination);
+            }
+        }
+
+        private static void MergeAndroidResources(string source, string destination)
+        {
+            Directory.CreateDirectory(destination);
+            foreach (var sourceFile in Directory.GetFiles(
+                         source, "*", SearchOption.AllDirectories))
+            {
+                var destinationFile = Path.Combine(
+                    destination,
+                    Path.GetRelativePath(source, sourceFile));
+                Directory.CreateDirectory(
+                    Path.GetDirectoryName(destinationFile)
+                    ?? throw new InvalidOperationException(
+                        $"Invalid Android resource path: {destinationFile}"));
+
+                if (IsValuesXml(destinationFile) && File.Exists(destinationFile))
+                    MergeValuesXml(sourceFile, destinationFile);
+                else
+                    File.Copy(sourceFile, destinationFile, true);
+            }
+        }
+
+        private static bool IsValuesXml(string file)
+        {
+            if (!string.Equals(Path.GetExtension(file), ".xml",
+                    StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return Path.GetFileName(Path.GetDirectoryName(file))
+                .StartsWith("values", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void MergeValuesXml(string sourceFile, string destinationFile)
+        {
+            var sourceDocument = XDocument.Load(sourceFile);
+            var destinationDocument = XDocument.Load(destinationFile);
+            var sourceRoot = sourceDocument.Root;
+            var destinationRoot = destinationDocument.Root;
+            if (sourceRoot?.Name.LocalName != "resources"
+                || destinationRoot?.Name.LocalName != "resources")
+                throw new InvalidDataException(
+                    $"Android values XML must have a <resources> root: {sourceFile}");
+
+            var existingKeys = destinationRoot.Elements()
+                .Select(GetResourceKey)
+                .Where(key => key != null)
+                .ToHashSet(StringComparer.Ordinal);
+
+            foreach (var element in sourceRoot.Elements())
+            {
+                var key = GetResourceKey(element);
+                if (key != null && existingKeys.Contains(key))
+                    continue;
+
+                destinationRoot.Add(new XElement(element));
+                if (key != null)
+                    existingKeys.Add(key);
+            }
+
+            destinationDocument.Save(destinationFile);
+        }
+
+        private static string GetResourceKey(XElement element)
+        {
+            var name = element.Attribute("name")?.Value;
+            if (string.IsNullOrWhiteSpace(name))
+                return null;
+
+            var type = element.Name.LocalName == "item"
+                ? element.Attribute("type")?.Value ?? "item"
+                : element.Name.LocalName;
+            return $"{type}:{name}";
+        }
+
+        private static void ValidateMergedValuesResources(
+            string source,
+            string destination)
+        {
+            foreach (var sourceFile in Directory.GetFiles(
+                         source, "*.xml", SearchOption.AllDirectories))
+            {
+                var destinationFile = Path.Combine(
+                    destination,
+                    Path.GetRelativePath(source, sourceFile));
+                if (!IsValuesXml(destinationFile))
+                    continue;
+                if (!File.Exists(destinationFile))
+                    throw new FileNotFoundException(
+                        "Unity runtime resource file was not exported", destinationFile);
+
+                var expectedKeys = XDocument.Load(sourceFile).Root?
+                    .Elements().Select(GetResourceKey)
+                    .Where(key => key != null).ToArray()
+                    ?? Array.Empty<string>();
+                var actualKeys = XDocument.Load(destinationFile).Root?
+                    .Elements().Select(GetResourceKey)
+                    .Where(key => key != null)
+                    .ToHashSet(StringComparer.Ordinal)
+                    ?? new System.Collections.Generic.HashSet<string>();
+                var missing = expectedKeys
+                    .Where(key => !actualKeys.Contains(key)).ToArray();
+                if (missing.Length > 0)
+                    throw new InvalidDataException(
+                        $"Unity runtime resources missing from {destinationFile}: "
+                        + string.Join(", ", missing));
+            }
+        }
 
         private static void Copy(string source, string destinationPath, bool clearDestination = true)
         {
