@@ -34,7 +34,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-common:2.8.7")
     implementation("androidx.lifecycle:lifecycle-process:2.8.7")
     implementation("androidx.annotation:annotation:1.9.1")
-    compileOnly(group = "", name = "unity-classes", ext = "jar") // provided by Unity at runtime via flatDir
+    // flatDir resolves this local JAR by name; a non-empty group also keeps
+    // AGP 9.2's GradleDetector from treating the notation as a Windows path.
+    compileOnly(group = "com.unity3d.player", name = "unity-classes", ext = "jar")
 
     val lifecycleProject = rootProject.findProject(":flutter_plugin_android_lifecycle")
     if (lifecycleProject != null) {
