@@ -20,6 +20,11 @@ typedef MessageCallback = void Function(UnityMessage message);
 /// handler.dispose();
 /// ```
 class MessageHandler {
+  /// Creates a handler with no registered callbacks.
+  ///
+  /// Register callbacks with [on] and release them with [dispose].
+  MessageHandler();
+
   final Map<String, List<MessageCallback>> _handlers = {};
   final List<StreamSubscription<UnityMessage>> _subscriptions = [];
 

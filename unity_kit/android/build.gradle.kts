@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.unity_kit"
-version = "0.9.1"
+version = "2.2.0"
 
 android {
     namespace = "com.unity_kit"

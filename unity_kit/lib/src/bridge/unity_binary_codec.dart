@@ -146,6 +146,12 @@ abstract final class UnityBinaryCodec {
 ///     .takeBytes();
 /// ```
 class UnityBinaryWriter {
+  /// Creates an empty writer.
+  ///
+  /// A writer is reusable: [takeBytes] returns what was written and starts
+  /// the next payload from empty.
+  UnityBinaryWriter();
+
   // copy: true — every add() snapshots the bytes immediately, so the shared
   // [_scratch] scratch buffer can be safely reused across writes.
   final BytesBuilder _builder = BytesBuilder(copy: true);
@@ -233,7 +239,12 @@ class UnityBinaryReader {
 
   /// Reads a length-prefixed UTF-8 string.
   String readString() {
-    final length = readInt32();
+    // The prefix is unsigned (see [UnityBinaryWriter.writeString]). Reading
+    // it signed turns a corrupt length of 2^31 or more negative, which slips
+    // past [_require] and fails as a RangeError instead of a BridgeException.
+    _require(4);
+    final length = _view.getUint32(_offset, Endian.big);
+    _offset += 4;
     _require(length);
     final value = utf8.decode(_bytes.sublist(_offset, _offset + length));
     _offset += length;

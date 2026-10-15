@@ -114,5 +114,40 @@ void main() {
 
       expect(reader.readInt32, throwsA(isA<BridgeException>()));
     });
+
+    test('reader throws when a string length exceeds the buffer', () {
+      // Arrange
+      final bytes = (UnityBinaryWriter()
+            ..writeInt32(10)
+            ..writeBool(true))
+          .takeBytes();
+      final reader = UnityBinaryReader(bytes);
+
+      // Act & Assert
+      expect(reader.readString, throwsA(isA<BridgeException>()));
+    });
+
+    test('reader treats the string length prefix as unsigned', () {
+      // Arrange: 0xFFFFFFFF is -1 when read signed, 4294967295 unsigned.
+      final bytes = Uint8List.fromList([0xFF, 0xFF, 0xFF, 0xFF, 0x41]);
+      final reader = UnityBinaryReader(bytes);
+
+      // Act & Assert
+      expect(reader.readString, throwsA(isA<BridgeException>()));
+    });
+
+    test('reader decodes a string written into a sub-view of a buffer', () {
+      // Arrange
+      final payload = (UnityBinaryWriter()..writeString('héllo')).takeBytes();
+      final backing = Uint8List(payload.length + 3)
+        ..setRange(3, 3 + payload.length, payload);
+      final view = Uint8List.sublistView(backing, 3);
+
+      // Act
+      final value = UnityBinaryReader(view).readString();
+
+      // Assert
+      expect(value, 'héllo');
+    });
   });
 }

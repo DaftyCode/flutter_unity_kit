@@ -77,6 +77,38 @@ enum UnityArMode { none, passthrough, overlay }
 `UnityConfig.toCreationParams()` is the canonical Dart → native map (carries
 `sceneName` and `arMode`).
 
+## Readiness (2.2.0)
+
+### UnityBridge.waitUntilReady()
+
+```dart
+Future<void> waitUntilReady({Duration timeout = UnityBridgeReadiness.defaultReadyTimeout})
+```
+
+Extension on `UnityBridge` (works on custom bridges and test doubles).
+Completes when the bridge reports `ready`, immediately if it already is.
+Throws `EngineReadyTimeoutException` after `timeout` (default 30 s),
+`EngineNotReadyException` if the bridge is disposed first, and
+`ArgumentError` for a non-positive `timeout`.
+
+### EngineReadyTimeoutException
+
+`UnityKitException` with the `timeout` that elapsed and a message listing the
+usual causes of a blank Unity view.
+
+### UnityView.readyTimeout / onReadyTimeout
+
+Optional. When `readyTimeout` is set and Unity is still not ready when it
+elapses, `UnityView` logs a warning with the same causes and calls
+`onReadyTimeout(bridge)` once. The placeholder stays up and later readiness
+still fires `onReady`.
+
+### Queued message flush
+
+`sendWhenReady` / `sendBinaryWhenReady` messages flush in call order, also
+for messages sent while the flush is running. A message that fails to send
+is logged and no longer stops the ones queued after it.
+
 ## Environment Preflight (2.1.0)
 
 ### UnityKitPlatform.environment()

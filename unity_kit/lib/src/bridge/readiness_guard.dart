@@ -39,6 +39,7 @@ class ReadinessGuard {
   final int maxQueueSize;
 
   bool _isReady = false;
+  bool _isFlushing = false;
   final List<_QueuedMessage> _queue = [];
 
   /// Whether Unity is ready to receive messages.
@@ -54,13 +55,15 @@ class ReadinessGuard {
 
   /// Queues a [message] until Unity is ready, then sends via [sender].
   ///
-  /// If already ready, sends immediately without queuing.
+  /// If already ready, sends immediately without queuing. While
+  /// [markReady] is still flushing, the message is queued behind the
+  /// pending ones so delivery stays in call order.
   /// If the queue is full, the oldest message is dropped.
   void queueUntilReady(
     UnityMessage message,
     Future<void> Function(UnityMessage) sender,
   ) {
-    if (_isReady) {
+    if (_isReady && !_isFlushing) {
       sender(message);
       return;
     }
@@ -74,14 +77,40 @@ class ReadinessGuard {
   }
 
   /// Marks Unity as ready and flushes all queued messages in order.
+  ///
+  /// A message whose sender throws does not stop the flush: the remaining
+  /// messages are still sent and the first error is rethrown afterwards.
+  /// Calling [reset] mid-flush stops it and discards what is left, as
+  /// [reset] always does.
   Future<void> markReady() async {
     _isReady = true;
+    if (_isFlushing) return;
+    _isFlushing = true;
 
-    for (final queued in _queue) {
-      await queued.sender(queued.message);
+    Object? firstError;
+    StackTrace? firstStackTrace;
+    try {
+      while (_isReady && _queue.isNotEmpty) {
+        final queued = _queue.removeAt(0);
+        try {
+          await queued.sender(queued.message);
+        } catch (error, stackTrace) {
+          UnityKitLogger.instance.error(
+            'Failed to flush queued message: ${queued.message.type}',
+            error,
+            stackTrace,
+          );
+          firstError ??= error;
+          firstStackTrace ??= stackTrace;
+        }
+      }
+    } finally {
+      _isFlushing = false;
     }
 
-    _queue.clear();
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError, firstStackTrace!);
+    }
   }
 
   /// Resets to not-ready state and clears the queue.

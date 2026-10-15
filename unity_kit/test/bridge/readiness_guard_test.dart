@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:unity_kit/src/bridge/readiness_guard.dart';
 import 'package:unity_kit/src/exceptions/exceptions.dart';
@@ -98,6 +100,77 @@ void main() {
 
         await guard.markReady();
 
+        expect(guard.queueLength, 0);
+      });
+
+      test('keeps flushing after a failing message and rethrows', () async {
+        // Arrange
+        final sent = <String>[];
+        guard
+          ..queueUntilReady(
+            UnityMessage.command('Fails'),
+            (msg) async => throw StateError('channel gone'),
+          )
+          ..queueUntilReady(
+            UnityMessage.command('After'),
+            (msg) async => sent.add(msg.type),
+          );
+
+        // Act
+        final flush = guard.markReady();
+
+        // Assert
+        await expectLater(flush, throwsA(isA<StateError>()));
+        expect(sent, ['After']);
+        expect(guard.queueLength, 0);
+      });
+
+      test('delivers messages queued mid-flush after the pending ones',
+          () async {
+        // Arrange
+        final sent = <String>[];
+        final gate = Completer<void>();
+        Future<void> record(UnityMessage msg) async => sent.add(msg.type);
+        guard
+          ..queueUntilReady(UnityMessage.command('First'), (msg) async {
+            await gate.future;
+            sent.add(msg.type);
+          })
+          ..queueUntilReady(UnityMessage.command('Second'), record);
+
+        // Act
+        final flush = guard.markReady();
+        guard.queueUntilReady(UnityMessage.command('Third'), record);
+        gate.complete();
+        await flush;
+
+        // Assert
+        expect(sent, ['First', 'Second', 'Third']);
+      });
+
+      test('stops cleanly when reset during the flush', () async {
+        // Arrange
+        final sent = <String>[];
+        final gate = Completer<void>();
+        guard
+          ..queueUntilReady(UnityMessage.command('First'), (msg) async {
+            await gate.future;
+            sent.add(msg.type);
+          })
+          ..queueUntilReady(
+            UnityMessage.command('Second'),
+            (msg) async => sent.add(msg.type),
+          );
+
+        // Act
+        final flush = guard.markReady();
+        guard.reset();
+        gate.complete();
+        await flush;
+
+        // Assert
+        expect(sent, ['First']);
+        expect(guard.isReady, isFalse);
         expect(guard.queueLength, 0);
       });
     });

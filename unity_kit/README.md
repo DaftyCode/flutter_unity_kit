@@ -100,7 +100,7 @@ Full hosted documentation — a complete zero-to-running walkthrough, native set
 ```yaml
 # pubspec.yaml
 dependencies:
-  unity_kit: ^2.0.0
+  unity_kit: ^2.2.0
 ```
 
 Or install via command line:
@@ -235,6 +235,31 @@ The bridge is intentionally independent of the widget. You can create it in a
 service layer, pass it to multiple widgets, and dispose it on your own terms.
 When `UnityView` receives an external bridge, it **never** disposes it -- the
 widget only disposes bridges it creates internally.
+
+### Detecting a Unity view that never starts
+
+A blank Unity view usually means the player never reported ready (no
+`FlutterBridge` GameObject in the first scene, the Unity export missing from
+the host build, or a native start-up error). Put a limit on the wait instead
+of showing the placeholder forever:
+
+```dart
+// In the widget: logs the likely causes and lets you show a retry UI.
+UnityView(
+  bridge: bridge,
+  readyTimeout: const Duration(seconds: 20),
+  onReadyTimeout: (bridge) => setState(() => _unityFailed = true),
+);
+
+// In a service or cubit: works with any UnityBridge, including test doubles.
+try {
+  await bridge.waitUntilReady(timeout: const Duration(seconds: 20));
+} on EngineReadyTimeoutException catch (e) {
+  logger.warning(e.message);
+}
+```
+
+Both are opt-in. Readiness that arrives after the timeout is still honoured.
 
 ---
 

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:unity_kit/src/bridge/unity_bridge.dart';
+import 'package:unity_kit/src/bridge/unity_bridge_readiness.dart';
 import 'package:unity_kit/src/exceptions/exceptions.dart';
 import 'package:unity_kit/src/models/models.dart';
 import 'package:unity_kit/src/platform/unity_kit_platform.dart';
@@ -138,6 +139,37 @@ void main() {
   tearDown(() async {
     await bridge.dispose();
     await platform.close();
+  });
+
+  group('waitUntilReady', () {
+    test('completes on onUnityCreated', () async {
+      // Arrange
+      await bridge.initialize();
+      final wait = bridge.waitUntilReady();
+
+      // Act
+      platform.emitUnityCreated();
+
+      // Assert
+      await expectLater(wait, completes);
+      expect(bridge.isReady, isTrue);
+    });
+
+    test('throws EngineNotReadyException when disposed while waiting',
+        () async {
+      // Arrange
+      await bridge.initialize();
+      final expectation = expectLater(
+        bridge.waitUntilReady(),
+        throwsA(isA<EngineNotReadyException>()),
+      );
+
+      // Act
+      await bridge.dispose();
+
+      // Assert
+      await expectation;
+    });
   });
 
   group('initialization', () {
