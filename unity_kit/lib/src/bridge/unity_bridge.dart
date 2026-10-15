@@ -28,6 +28,12 @@ import 'unity_binary_codec.dart';
 /// await bridge.dispose();
 /// ```
 abstract class UnityBridge {
+  /// Base constructor for [UnityBridge] implementations.
+  ///
+  /// Use [UnityBridgeImpl] for the default implementation; extend or
+  /// implement this class to provide a custom bridge or a test double.
+  UnityBridge();
+
   /// Current lifecycle state of the Unity player.
   UnityLifecycleState get currentState;
 

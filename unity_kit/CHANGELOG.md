@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] - 2026-10-15
+
+### Fixed
+
+- `UnityBinaryReader.readString` now reads the length prefix as an unsigned
+  32-bit integer, matching `UnityBinaryWriter.writeString` and the C#
+  codec. A corrupt prefix of 2^31 or more used to come out negative, slip
+  past the bounds check and fail with a `RangeError`; it now throws the
+  documented `BridgeException`. Valid payloads decode exactly as before.
+
+### Documentation
+
+- Documented the constructors of `LifecycleManager`, `MessageHandler`,
+  `UnityBinaryWriter`, `UnityBridge` and `UnityKitMethodChannel`. They were
+  implicit default constructors; the explicit ones take the same (empty)
+  argument list, so no call site changes.
+- Podspec and Gradle versions now match the package version (they still
+  said 0.9.1), and both READMEs show `^2.1.2`.
+
 ## [2.1.1] - 2026-08-24
 
 ### Fixed

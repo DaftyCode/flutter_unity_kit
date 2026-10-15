@@ -29,6 +29,11 @@ import '../models/models.dart';
 /// lifecycle.dispose();
 /// ```
 class LifecycleManager {
+  /// Creates a manager in the [UnityLifecycleState.uninitialized] state.
+  ///
+  /// Call [dispose] when done to close [stateStream] and [eventStream].
+  LifecycleManager();
+
   UnityLifecycleState _state = UnityLifecycleState.uninitialized;
 
   final StreamController<UnityLifecycleState> _stateController =

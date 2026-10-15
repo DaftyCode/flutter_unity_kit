@@ -100,7 +100,7 @@ Full hosted documentation — a complete zero-to-running walkthrough, native set
 ```yaml
 # pubspec.yaml
 dependencies:
-  unity_kit: ^2.0.0
+  unity_kit: ^2.1.2
 ```
 
 Or install via command line:

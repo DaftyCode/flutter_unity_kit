@@ -87,7 +87,7 @@ Flutter (Dart)                                    Unity (C#)
 ```yaml
 # pubspec.yaml
 dependencies:
-  unity_kit: ^2.1.0
+  unity_kit: ^2.1.2
 ```
 
 ### 2. Minimal Flutter code
