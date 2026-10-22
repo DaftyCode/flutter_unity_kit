@@ -359,6 +359,22 @@ namespace UnityKit.Editor
                 Unity.Android.Types.DebugSymbolFormat.LegacyExtensions;
 #endif
 
+#if UNITY_ANDROID && UNITY_6000_5_OR_NEWER
+            // The ThinLTO build of libunity.so is faster at runtime but only
+            // exists for non-development players.
+            UnityEditor.Android.UserBuildSettings.linkTimeOptimization = isReleaseBuild
+                ? Unity.Android.Types.AndroidLinkTimeOptimization.Thin
+                : Unity.Android.Types.AndroidLinkTimeOptimization.None;
+#endif
+
+#if UNITY_6000_6_OR_NEWER
+            // Release drops the managed safety checks and profiler hooks that
+            // the other variants compile into the player.
+            PlayerSettings.SetManagedCodeVariant(
+                UnityEditor.Build.NamedBuildTarget.Android,
+                isReleaseBuild ? ManagedCodeVariant.Release : ManagedCodeVariant.Debug);
+#endif
+
 #if UNITY_ANDROID && UNITY_2023_1_OR_NEWER
             PlayerSettings.Android.applicationEntry = AndroidApplicationEntry.Activity;
 #endif
