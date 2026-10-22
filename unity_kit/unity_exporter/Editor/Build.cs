@@ -536,6 +536,13 @@ namespace UnityKit.Editor
                         ? $"\"{value}\""
                         : match.Value);
 
+                // Inside dependencies {}, project(':x') is a ProjectDependency,
+                // which no longer exposes projectDir on newer Gradle versions.
+                contents = Regex.Replace(
+                    contents,
+                    @"(?<![\w.])project\(\s*(['""]:unityLibrary['""])\s*\)\.projectDir",
+                    "rootProject.project($1).projectDir");
+
                 File.WriteAllText(buildFile, contents);
             }
         }
