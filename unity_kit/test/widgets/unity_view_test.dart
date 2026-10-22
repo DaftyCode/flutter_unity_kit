@@ -378,5 +378,114 @@ void main() {
         expect(find.text('Platform not supported'), findsOneWidget);
       },
     );
+
+    group('readyTimeout', () {
+      const timeout = Duration(seconds: 10);
+      const desktop = TargetPlatformVariant({TargetPlatform.linux});
+
+      Widget buildView({void Function(UnityBridge)? onReadyTimeout}) {
+        return Directionality(
+          textDirection: TextDirection.ltr,
+          child: UnityView(
+            bridge: mockBridge,
+            readyTimeout: timeout,
+            onReadyTimeout: onReadyTimeout,
+            placeholder: const Text('Loading Unity...'),
+          ),
+        );
+      }
+
+      testWidgets('calls onReadyTimeout when Unity never gets ready',
+          variant: desktop, (tester) async {
+        // Arrange
+        UnityBridge? timedOutBridge;
+        await tester.pumpWidget(
+          buildView(onReadyTimeout: (bridge) => timedOutBridge = bridge),
+        );
+
+        // Act
+        await tester.pump(timeout);
+
+        // Assert
+        expect(timedOutBridge, same(mockBridge));
+        expect(find.text('Loading Unity...'), findsOneWidget);
+      });
+
+      testWidgets('does not fire before the timeout elapses', variant: desktop,
+          (tester) async {
+        // Arrange
+        var timedOut = false;
+        await tester.pumpWidget(
+          buildView(onReadyTimeout: (_) => timedOut = true),
+        );
+
+        // Act
+        await tester.pump(timeout - const Duration(milliseconds: 1));
+
+        // Assert
+        expect(timedOut, isFalse);
+        await tester.pump(const Duration(milliseconds: 1));
+        expect(timedOut, isTrue);
+      });
+
+      testWidgets('does not fire when Unity gets ready in time',
+          variant: desktop, (tester) async {
+        // Arrange
+        var timedOut = false;
+        await tester.pumpWidget(
+          buildView(onReadyTimeout: (_) => timedOut = true),
+        );
+
+        // Act
+        mockBridge.emitReady();
+        await tester.pump();
+        await tester.pump(timeout);
+
+        // Assert
+        expect(timedOut, isFalse);
+      });
+
+      testWidgets('does not fire after the widget is disposed',
+          variant: desktop, (tester) async {
+        // Arrange
+        var timedOut = false;
+        await tester.pumpWidget(
+          buildView(onReadyTimeout: (_) => timedOut = true),
+        );
+
+        // Act
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(timeout);
+
+        // Assert
+        expect(timedOut, isFalse);
+      });
+
+      testWidgets('still accepts readiness after the timeout fired',
+          variant: desktop, (tester) async {
+        // Arrange
+        var readyCount = 0;
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: UnityView(
+              bridge: mockBridge,
+              readyTimeout: timeout,
+              onReady: (_) => readyCount++,
+              placeholder: const Text('Loading Unity...'),
+            ),
+          ),
+        );
+        await tester.pump(timeout);
+
+        // Act
+        mockBridge.emitReady();
+        await tester.pumpAndSettle();
+
+        // Assert
+        expect(readyCount, 1);
+        expect(find.text('Loading Unity...'), findsNothing);
+      });
+    });
   });
 }

@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.unity_kit"
-version = "0.9.1"
+version = "2.2.0"
 
 extensions.configure<LibraryExtension> {
     namespace = "com.unity_kit"

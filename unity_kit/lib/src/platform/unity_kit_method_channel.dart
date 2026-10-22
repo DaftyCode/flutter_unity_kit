@@ -9,6 +9,12 @@ import 'unity_kit_platform.dart';
 
 /// MethodChannel implementation of [UnityKitPlatform].
 class UnityKitMethodChannel extends UnityKitPlatform {
+  /// Creates the default MethodChannel-backed platform.
+  ///
+  /// Apps normally reach it through [UnityKitPlatform.instance]. Construct
+  /// one directly only to install a fresh instance, e.g. in tests.
+  UnityKitMethodChannel();
+
   final Map<int, MethodChannel> _channels = {};
   final StreamController<Map<String, dynamic>> _eventController =
       StreamController<Map<String, dynamic>>.broadcast();

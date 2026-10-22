@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-10-15
+
+### Added
+
+- **Ready timeout.** `bridge.waitUntilReady(timeout: ...)` completes when
+  Unity reports ready and throws the new `EngineReadyTimeoutException` when
+  it does not, with a message listing the usual causes of a blank Unity view
+  (no `FlutterBridge` GameObject in the first scene, Unity export missing
+  from the host build, native start-up error). It is an extension on
+  `UnityBridge`, so custom bridges and test doubles get it without
+  implementing anything. Throws `EngineNotReadyException` if the bridge is
+  disposed while waiting.
+- `UnityView.readyTimeout` and `UnityView.onReadyTimeout`: opt-in. When
+  Unity is still not ready after `readyTimeout`, the view logs the same
+  diagnostic and calls `onReadyTimeout` once, so the app can show a retry or
+  error UI instead of an endless placeholder. Later readiness still fires
+  `onReady`.
+
+### Fixed
+
+- Queued messages (`sendWhenReady`, `sendBinaryWhenReady`) no longer get lost
+  around readiness:
+  - one message failing to send stopped the flush and silently dropped every
+    message queued after it; the rest are now sent and the first error is
+    rethrown after the flush (the bridge logs it, as before);
+  - a message sent while the queue was still flushing was delivered ahead of
+    the older queued ones; delivery now stays in call order;
+  - a view disposal (`reset`) during the flush threw
+    `ConcurrentModificationError`; the flush now stops and discards the rest,
+    as `reset` documents.
+- `UnityBinaryReader.readString` now reads the length prefix as an unsigned
+  32-bit integer, matching `UnityBinaryWriter.writeString` and the C#
+  codec. A corrupt prefix of 2^31 or more used to come out negative, slip
+  past the bounds check and fail with a `RangeError`; it now throws the
+  documented `BridgeException`. Valid payloads decode exactly as before.
+
+### Documentation
+
+- Documented the constructors of `LifecycleManager`, `MessageHandler`,
+  `UnityBinaryWriter`, `UnityBridge` and `UnityKitMethodChannel`. They were
+  implicit default constructors; the explicit ones take the same (empty)
+  argument list, so no call site changes.
+- README section on detecting a Unity view that never starts; API reference
+  section for the readiness additions.
+- Podspec and Gradle versions now match the package version (they still
+  said 0.9.1), and both READMEs show `^2.2.0`.
+
 ## [2.1.1] - 2026-08-24
 
 ### Fixed

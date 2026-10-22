@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../bridge/unity_bridge.dart';
+import '../exceptions/exceptions.dart';
 import '../models/models.dart';
 import '../platform/unity_kit_platform.dart';
 import '../utils/logger.dart';
@@ -52,6 +53,8 @@ class UnityView extends StatefulWidget {
     this.onEvent,
     this.onSceneLoaded,
     this.gestureRecognizers,
+    this.readyTimeout,
+    this.onReadyTimeout,
   });
 
   /// External bridge instance. Bridge is INDEPENDENT of widget (Issue #1).
@@ -89,6 +92,20 @@ class UnityView extends StatefulWidget {
   /// When null, an empty set is used (default platform view behaviour).
   final Set<Factory<OneSequenceGestureRecognizer>>? gestureRecognizers;
 
+  /// How long to wait for Unity to report ready before [onReadyTimeout].
+  ///
+  /// Null (the default) disables the check. When set, the timer starts
+  /// with the widget; if Unity is still not ready when it fires, the widget
+  /// logs a warning listing the usual causes of a blank Unity view and
+  /// calls [onReadyTimeout]. The placeholder stays up and readiness is
+  /// still honoured if Unity reports in later.
+  final Duration? readyTimeout;
+
+  /// Called once when Unity is not ready within [readyTimeout].
+  ///
+  /// Use it to show a retry or error UI instead of an endless placeholder.
+  final void Function(UnityBridge bridge)? onReadyTimeout;
+
   @override
   State<UnityView> createState() => _UnityViewState();
 }
@@ -97,6 +114,7 @@ class _UnityViewState extends State<UnityView> {
   late final UnityBridge _bridge;
   late final bool _ownsBridge;
   bool _unityReady = false;
+  Timer? _readyTimer;
   final List<StreamSubscription<Object?>> _subscriptions = [];
 
   @override
@@ -112,6 +130,7 @@ class _UnityViewState extends State<UnityView> {
     }
 
     _subscribeToStreams();
+    _startReadyTimer();
 
     if (_ownsBridge) {
       SchedulerBinding.instance.addPostFrameCallback((_) {
@@ -142,12 +161,33 @@ class _UnityViewState extends State<UnityView> {
     _subscriptions.add(
       _bridge.lifecycleStream.listen((state) {
         if (state == UnityLifecycleState.ready && !_unityReady) {
+          _cancelReadyTimer();
           setState(() => _unityReady = true);
           widget.onReady?.call(_bridge);
           UnityKitLogger.instance.info('UnityView: bridge is ready');
         }
       }),
     );
+  }
+
+  void _startReadyTimer() {
+    final timeout = widget.readyTimeout;
+    if (timeout == null || _bridge.isReady) return;
+
+    _readyTimer = Timer(timeout, () {
+      _readyTimer = null;
+      if (!mounted || _unityReady) return;
+
+      UnityKitLogger.instance.warning(
+        'UnityView: ${EngineReadyTimeoutException.describe(timeout)}',
+      );
+      widget.onReadyTimeout?.call(_bridge);
+    });
+  }
+
+  void _cancelReadyTimer() {
+    _readyTimer?.cancel();
+    _readyTimer = null;
   }
 
   @override
@@ -241,6 +281,8 @@ class _UnityViewState extends State<UnityView> {
 
   @override
   void dispose() {
+    _cancelReadyTimer();
+
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }

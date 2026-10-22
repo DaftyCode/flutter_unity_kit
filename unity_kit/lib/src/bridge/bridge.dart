@@ -5,3 +5,4 @@ export 'message_throttler.dart';
 export 'readiness_guard.dart';
 export 'unity_binary_codec.dart';
 export 'unity_bridge.dart';
+export 'unity_bridge_readiness.dart';
