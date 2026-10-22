@@ -367,6 +367,12 @@ namespace UnityKit.Editor
                 : Unity.Android.Types.AndroidLinkTimeOptimization.None;
 #endif
 
+#if UNITY_ANDROID && UNITY_6000_6_OR_NEWER
+            // Lets Android's profilers (Perfetto, simpleperf) attach to release
+            // players, which is where performance has to be measured.
+            UnityEditor.Android.UserBuildSettings.profileableShell = true;
+#endif
+
 #if UNITY_6000_6_OR_NEWER
             // Release drops the managed safety checks and profiler hooks that
             // the other variants compile into the player.
