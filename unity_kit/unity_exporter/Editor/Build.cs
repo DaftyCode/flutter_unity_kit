@@ -491,29 +491,76 @@ namespace UnityKit.Editor
                     File.WriteAllText(proguardFile, rules + proguardText);
             }
 
-            NormalizeXrManifestModule(artifactPath);
+            NormalizeNestedAndroidLibraries(
+                artifactPath,
+                ReadGradleProperties(Path.Combine(APKPath, "gradle.properties")));
             PatchBundledAarNamespaces(artifactPath);
         }
 
         /// <summary>
-        /// Unity 6 can export xrmanifest as a nested Android library without a
-        /// namespace. AGP 8+ rejects that module while consuming unityLibrary.
+        /// Unity exports Android library plug-ins as nested modules of
+        /// unityLibrary (xrmanifest, and since Unity 6.6 accessibility). Some
+        /// have no namespace, which AGP 8+ rejects, and some read unity.*
+        /// properties from the export's gradle.properties, which the host
+        /// Flutter project does not have, so both are written in.
         /// </summary>
-        private static void NormalizeXrManifestModule(string artifactPath)
+        private static void NormalizeNestedAndroidLibraries(
+            string artifactPath,
+            System.Collections.Generic.IReadOnlyDictionary<string, string> exportProperties)
         {
-            var buildFile = Path.Combine(
-                artifactPath, "xrmanifest.androidlib", "build.gradle");
-            if (!File.Exists(buildFile))
-                return;
+            foreach (var moduleDirectory in Directory.GetDirectories(artifactPath, "*.androidlib"))
+            {
+                var buildFile = Path.Combine(moduleDirectory, "build.gradle");
+                if (!File.Exists(buildFile))
+                    continue;
 
-            var contents = File.ReadAllText(buildFile);
-            if (Regex.IsMatch(contents, @"(?m)^\s*namespace\s+"))
-                return;
+                var contents = File.ReadAllText(buildFile);
 
-            contents = contents.Replace(
-                "android {",
-                "android {\n    namespace 'com.unity3d.player.xrmanifest'");
-            File.WriteAllText(buildFile, contents);
+                if (!Regex.IsMatch(contents, @"(?m)^\s*namespace\s+"))
+                {
+                    var moduleName = Path.GetFileName(moduleDirectory)
+                        .Replace(".androidlib", string.Empty)
+                        .Replace('-', '_');
+                    var namespaceName = moduleName.StartsWith("com.", StringComparison.Ordinal)
+                        ? moduleName
+                        : "com.unity3d.player." + moduleName;
+                    contents = contents.Replace(
+                        "android {",
+                        $"android {{\n    namespace '{namespaceName}'");
+                }
+
+                contents = Regex.Replace(
+                    contents,
+                    @"getProperty\(\s*[""'](unity\.[A-Za-z0-9_.]+)[""']\s*\)",
+                    match => exportProperties.TryGetValue(match.Groups[1].Value, out var value)
+                        ? $"\"{value}\""
+                        : match.Value);
+
+                File.WriteAllText(buildFile, contents);
+            }
+        }
+
+        private static System.Collections.Generic.IReadOnlyDictionary<string, string> ReadGradleProperties(
+            string path)
+        {
+            var properties = new System.Collections.Generic.Dictionary<string, string>();
+            if (!File.Exists(path))
+                return properties;
+
+            foreach (var rawLine in File.ReadAllLines(path))
+            {
+                var line = rawLine.Trim();
+                if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal))
+                    continue;
+
+                var separator = line.IndexOf('=');
+                if (separator <= 0)
+                    continue;
+
+                properties[line.Substring(0, separator).Trim()] = line.Substring(separator + 1).Trim();
+            }
+
+            return properties;
         }
 
         /// <summary>
